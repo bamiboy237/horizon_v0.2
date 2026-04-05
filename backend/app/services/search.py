@@ -1,0 +1,1 @@
+"""Opportunity search service placeholder."""

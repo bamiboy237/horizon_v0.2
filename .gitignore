@@ -4,5 +4,7 @@
 backend/.env
 backend/.venv/
 backend/__pycache__/
+__pycache__/
+*.py[cod]
 *.md
 .gitignore

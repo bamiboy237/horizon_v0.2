@@ -1,0 +1,1 @@
+"""Research graph schema placeholders."""

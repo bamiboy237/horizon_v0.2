@@ -1,0 +1,1 @@
+"""Research graph node placeholders."""

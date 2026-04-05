@@ -1,0 +1,1 @@
+"""Opportunity validation service placeholder."""
