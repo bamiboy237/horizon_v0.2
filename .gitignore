@@ -4,3 +4,4 @@
 backend/.env
 backend/.venv/
 backend/__pycache__/
+.md
