@@ -1,0 +1,7 @@
+[project]
+name = "backend"
+version = "0.1.0"
+description = "Backend service for Horizon v0.2"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
