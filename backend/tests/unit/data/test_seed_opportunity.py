@@ -96,8 +96,22 @@ def test_normalize_opportunity_builds_insertable_payload() -> None:
     assert payload["deadline"] == datetime(2026, 1, 15, 23, 59, 59, tzinfo=UTC)
     assert payload["embedding_model"] == "text-embedding-004"
     assert payload["major_requirements"] == ["Computer Science"]
-    assert payload["demographic_requirements"] == {"group": ["students"]}
+    assert payload["demographic_requirements"] == '{"group": ["students"]}'
     assert record["source_url"] == "https://Example.com/path/"
+
+
+def test_normalize_opportunity_serializes_json_fields() -> None:
+    record = {
+        "source_url": "https://example.com/path/",
+        "title": "Example Opportunity",
+        "organization": "Example Org",
+        "opportunity_type": "scholarship",
+        "demographic_requirements": {"gender": ["female"]},
+    }
+
+    payload = seed_script.normalize_opportunity(record, verified_at=datetime(2026, 4, 5, tzinfo=UTC))
+
+    assert payload["demographic_requirements"] == '{"gender": ["female"]}'
 
 
 def test_dedupe_opportunities_keeps_first_normalized_url() -> None:

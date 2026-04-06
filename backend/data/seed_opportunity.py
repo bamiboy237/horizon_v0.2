@@ -149,6 +149,13 @@ def _clean_text_list(value: Any) -> list[str] | None:
     return cleaned_values
 
 
+def _clean_json_value(value: Any) -> str | None:
+    if value is None:
+        return None
+
+    return json.dumps(value, ensure_ascii=False)
+
+
 def _clean_numeric(value: Any) -> float | int | None:
     if value is None:
         return None
@@ -206,7 +213,7 @@ def normalize_opportunity(record: dict[str, Any], *, verified_at: datetime | Non
         "major_requirements": _clean_text_list(record.get("major_requirements")),
         "major_cip_requirements": _clean_text_list(record.get("major_cip_requirements")),
         "institution_types": _clean_text_list(record.get("institution_types")),
-        "demographic_requirements": copy.deepcopy(record.get("demographic_requirements")),
+        "demographic_requirements": _clean_json_value(copy.deepcopy(record.get("demographic_requirements"))),
         "eligibility_text": _clean_text(record.get("eligibility_text")),
         "deadline": _parse_deadline(record.get("deadline")),
         "application_url": _clean_text(record.get("application_url")),
