@@ -22,9 +22,20 @@ def build_settings(**overrides: Any) -> Settings:
         "clerk_secret_key": None,
         "clerk_webhook_signing_secret": None,
         "clerk_authorized_parties": [],
+        "openai_api_key": None,
+        "openai_embedding_model": "text-embedding-3-small",
+        "openai_embedding_dimensions": 1536,
     }
     values.update(overrides)
     return Settings.model_construct(**values)
+
+
+def test_openai_embedding_settings_have_expected_defaults() -> None:
+    settings = build_settings()
+
+    assert settings.openai_api_key is None
+    assert settings.openai_embedding_model == "text-embedding-3-small"
+    assert settings.openai_embedding_dimensions == 1536
 
 
 def test_sqlalchemy_database_url_returns_none_when_database_url_is_missing() -> None:
@@ -38,7 +49,10 @@ def test_sqlalchemy_database_url_returns_none_when_database_url_is_missing() -> 
     [
         ("postgresql://localhost/example", "postgresql+psycopg://localhost/example"),
         ("postgres://localhost/example", "postgresql+psycopg://localhost/example"),
-        ("postgresql+psycopg://localhost/example", "postgresql+psycopg://localhost/example"),
+        (
+            "postgresql+psycopg://localhost/example",
+            "postgresql+psycopg://localhost/example",
+        ),
     ],
 )
 def test_sqlalchemy_database_url_normalizes_supported_formats(

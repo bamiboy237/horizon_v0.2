@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     clerk_secret_key: str | None = None
     clerk_webhook_signing_secret: str | None = None
     clerk_authorized_parties: list[str] = Field(default_factory=list)
+    openai_api_key: str | None = None
+    openai_embedding_model: str = "text-embedding-3-small"
+    openai_embedding_dimensions: int = 1536
 
     @field_validator("clerk_authorized_parties")
     @classmethod
@@ -33,6 +36,14 @@ class Settings(BaseSettings):
             raise ValueError("CLERK_AUTHORIZED_PARTIES must contain non-empty origins.")
 
         return cleaned_values
+
+    @field_validator("openai_embedding_dimensions")
+    @classmethod
+    def _validate_openai_embedding_dimensions(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("OPENAI_EMBEDDING_DIMENSIONS must be a positive integer.")
+
+        return value
 
     @model_validator(mode="after")
     def _validate_clerk_auth_configuration(self) -> "Settings":
@@ -53,7 +64,9 @@ class Settings(BaseSettings):
             return self.database_url
 
         if self.database_url.startswith("postgresql://"):
-            return self.database_url.replace("postgresql://", "postgresql+psycopg://", 1)
+            return self.database_url.replace(
+                "postgresql://", "postgresql+psycopg://", 1
+            )
 
         if self.database_url.startswith("postgres://"):
             return self.database_url.replace("postgres://", "postgresql+psycopg://", 1)

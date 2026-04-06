@@ -75,8 +75,8 @@ def upgrade() -> None:
             required_materials TEXT[],
             estimated_prep_hours INTEGER,
             description TEXT,
-            embedding vector(768),
-            embedding_model VARCHAR(50) DEFAULT 'text-embedding-004',
+            embedding vector(1536),
+            embedding_model VARCHAR(50) DEFAULT 'text-embedding-3-small',
             search_vector tsvector GENERATED ALWAYS AS (
                 to_tsvector(
                     'english',
@@ -95,7 +95,9 @@ def upgrade() -> None:
         "CREATE INDEX idx_opp_embedding ON opportunities USING hnsw (embedding vector_cosine_ops);"
     )
     op.execute("CREATE INDEX idx_opp_search ON opportunities USING gin(search_vector);")
-    op.execute("CREATE INDEX idx_opp_active_deadline ON opportunities(is_active, deadline);")
+    op.execute(
+        "CREATE INDEX idx_opp_active_deadline ON opportunities(is_active, deadline);"
+    )
     op.execute("CREATE INDEX idx_opp_type ON opportunities(opportunity_type);")
     op.execute("CREATE INDEX idx_opp_normalized_url ON opportunities(normalized_url);")
 
@@ -154,7 +156,9 @@ def upgrade() -> None:
         );
         """
     )
-    op.execute("CREATE INDEX idx_signals_user ON user_signals(user_id, created_at DESC);")
+    op.execute(
+        "CREATE INDEX idx_signals_user ON user_signals(user_id, created_at DESC);"
+    )
 
     op.execute(
         """

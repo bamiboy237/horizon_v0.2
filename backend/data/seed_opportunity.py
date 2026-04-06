@@ -15,8 +15,9 @@ import asyncpg
 from pydantic import BaseModel, Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.core.embeddings import get_embedding
 
-DEFAULT_EMBEDDING_MODEL = "text-embedding-004"
+DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
 SEED_FILE_NAME = "opportunities.json"
 OPPORTUNITY_COLUMNS: tuple[str, ...] = (
     "source_url",
@@ -39,18 +40,45 @@ OPPORTUNITY_COLUMNS: tuple[str, ...] = (
     "required_materials",
     "estimated_prep_hours",
     "description",
+    "embedding",
     "embedding_model",
     "last_verified",
 )
 OPPORTUNITY_UPDATE_COLUMNS: tuple[str, ...] = tuple(
     column for column in OPPORTUNITY_COLUMNS if column != "normalized_url"
 )
+EMBEDDING_SOURCE_FIELDS: tuple[str, ...] = (
+    "title",
+    "organization",
+    "opportunity_type",
+    "location",
+    "eligibility_text",
+    "required_materials",
+    "description",
+    "location",
+    "funding_amount",
+    "funding_type",
+    "citizenship_required",
+    "gpa_minimum",
+    "major_requirements",
+    "major_cip_requirements",
+    "institution_types",
+    "demographic_requirements",
+    "eligibility_text",
+    "deadline",
+    "application_url",
+    "required_materials",
+    "estimated_prep_hours",
+    "description",
+)
 
 
 class SeedSettings(BaseSettings):
     """Environment settings for the one-off seed script."""
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
     database_url: str | None = None
     database_pool_min_size: int = 1
@@ -83,7 +111,9 @@ class SeedFileModel(BaseModel):
 
     @field_validator("opportunities")
     @classmethod
-    def _validate_opportunities(cls, value: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _validate_opportunities(
+        cls, value: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         for record in value:
             if not isinstance(record, dict):
                 raise ValueError("Each opportunity must be a JSON object.")
@@ -109,7 +139,9 @@ def load_opportunities(json_path: Path) -> list[dict[str, Any]]:
         model = SeedFileModel.model_validate(data)
         return [dict(record) for record in model.opportunities]
 
-    raise ValueError("The opportunities seed file must contain a JSON array or an object with an opportunities key.")
+    raise ValueError(
+        "The opportunities seed file must contain a JSON array or an object with an opportunities key."
+    )
 
 
 def normalize_source_url(source_url: str) -> str:
@@ -124,7 +156,9 @@ def normalize_source_url(source_url: str) -> str:
         raise ValueError(f"Invalid source_url: {source_url}")
 
     normalized_path = parts.path.rstrip("/") or "/"
-    return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), normalized_path, parts.query, ""))
+    return urlunsplit(
+        (parts.scheme.lower(), parts.netloc.lower(), normalized_path, parts.query, "")
+    )
 
 
 def _clean_text(value: Any) -> str | None:
@@ -180,7 +214,39 @@ def _parse_deadline(value: Any) -> datetime | None:
     return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
 
 
-def normalize_opportunity(record: dict[str, Any], *, verified_at: datetime | None = None) -> dict[str, Any]:
+def build_embedding_text(record: dict[str, Any]) -> str:
+    """Build the canonical text used to generate the opportunity embedding."""
+
+    parts: list[str] = []
+
+    label_map = {
+        "opportunity_type": "Opportunity Type",
+        "eligibility_text": "Eligibility Text",
+        "required_materials": "Required Materials",
+    }
+
+    for field in EMBEDDING_SOURCE_FIELDS:
+        value = record.get(field)
+        if value is None:
+            continue
+
+        if isinstance(value, list):
+            normalized_value = ", ".join(
+                str(item).strip() for item in value if str(item).strip()
+            )
+        else:
+            normalized_value = str(value).strip()
+
+        if normalized_value:
+            label = label_map.get(field, field.replace("_", " ").title())
+            parts.append(f"{label}: {normalized_value}")
+
+    return "\n".join(parts)
+
+
+def normalize_opportunity(
+    record: dict[str, Any], *, verified_at: datetime | None = None
+) -> dict[str, Any]:
     """Normalize a raw opportunity record into an insertable payload."""
 
     source_url = _clean_text(record.get("source_url"))
@@ -211,21 +277,28 @@ def normalize_opportunity(record: dict[str, Any], *, verified_at: datetime | Non
         "citizenship_required": _clean_text_list(record.get("citizenship_required")),
         "gpa_minimum": _clean_numeric(record.get("gpa_minimum")),
         "major_requirements": _clean_text_list(record.get("major_requirements")),
-        "major_cip_requirements": _clean_text_list(record.get("major_cip_requirements")),
+        "major_cip_requirements": _clean_text_list(
+            record.get("major_cip_requirements")
+        ),
         "institution_types": _clean_text_list(record.get("institution_types")),
-        "demographic_requirements": _clean_json_value(copy.deepcopy(record.get("demographic_requirements"))),
+        "demographic_requirements": _clean_json_value(
+            copy.deepcopy(record.get("demographic_requirements"))
+        ),
         "eligibility_text": _clean_text(record.get("eligibility_text")),
         "deadline": _parse_deadline(record.get("deadline")),
         "application_url": _clean_text(record.get("application_url")),
         "required_materials": _clean_text_list(record.get("required_materials")),
         "estimated_prep_hours": _clean_numeric(record.get("estimated_prep_hours")),
         "description": _clean_text(record.get("description")),
-        "embedding_model": _clean_text(record.get("embedding_model")) or DEFAULT_EMBEDDING_MODEL,
+        "embedding_model": _clean_text(record.get("embedding_model"))
+        or DEFAULT_EMBEDDING_MODEL,
         "last_verified": normalized_verified_at,
     }
 
 
-def dedupe_opportunities(records: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
+def dedupe_opportunities(
+    records: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], int]:
     """Remove duplicate records after URL normalization while preserving order."""
 
     unique_records: list[dict[str, Any]] = []
@@ -248,7 +321,9 @@ def build_upsert_query() -> str:
     """Build the SQL statement used to insert or refresh a seed row."""
 
     columns = ", ".join(OPPORTUNITY_COLUMNS)
-    placeholders = ", ".join(f"${index}" for index in range(1, len(OPPORTUNITY_COLUMNS) + 1))
+    placeholders = ", ".join(
+        f"${index}" for index in range(1, len(OPPORTUNITY_COLUMNS) + 1)
+    )
     assignments = ",\n                ".join(
         f"{column} = EXCLUDED.{column}" for column in OPPORTUNITY_UPDATE_COLUMNS
     )
@@ -308,6 +383,7 @@ async def seed_opportunities(json_path: Path) -> dict[str, int]:
 
             for record in unique_records:
                 try:
+                    record["embedding"] = get_embedding(build_embedding_text(record))
                     if await upsert_opportunity(connection, record):
                         inserted += 1
                     else:

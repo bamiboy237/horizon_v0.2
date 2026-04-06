@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
 
 import asyncpg
 import pytest
 
+from app.core import embeddings as embedding_utils
 from data import seed_opportunity as seed_script
 
 
@@ -72,7 +72,9 @@ def test_load_opportunities_reads_wrapped_dataset() -> None:
 
 
 def test_normalize_source_url_canonicalizes_common_variants() -> None:
-    normalized = seed_script.normalize_source_url("HTTPS://Example.com/path/?q=1#fragment")
+    normalized = seed_script.normalize_source_url(
+        "HTTPS://Example.com/path/?q=1#fragment"
+    )
 
     assert normalized == "https://example.com/path?q=1"
 
@@ -90,11 +92,14 @@ def test_normalize_opportunity_builds_insertable_payload() -> None:
         "gpa_minimum": 3.0,
     }
 
-    payload = seed_script.normalize_opportunity(record, verified_at=datetime(2026, 4, 5, tzinfo=UTC))
+    payload = seed_script.normalize_opportunity(
+        record,
+        verified_at=datetime(2026, 4, 5, tzinfo=UTC),
+    )
 
     assert payload["normalized_url"] == "https://example.com/path"
     assert payload["deadline"] == datetime(2026, 1, 15, 23, 59, 59, tzinfo=UTC)
-    assert payload["embedding_model"] == "text-embedding-004"
+    assert payload["embedding_model"] == "text-embedding-3-small"
     assert payload["major_requirements"] == ["Computer Science"]
     assert payload["demographic_requirements"] == '{"group": ["students"]}'
     assert record["source_url"] == "https://Example.com/path/"
@@ -109,9 +114,65 @@ def test_normalize_opportunity_serializes_json_fields() -> None:
         "demographic_requirements": {"gender": ["female"]},
     }
 
-    payload = seed_script.normalize_opportunity(record, verified_at=datetime(2026, 4, 5, tzinfo=UTC))
+    payload = seed_script.normalize_opportunity(
+        record,
+        verified_at=datetime(2026, 4, 5, tzinfo=UTC),
+    )
 
     assert payload["demographic_requirements"] == '{"gender": ["female"]}'
+
+
+def test_build_embedding_text_includes_key_fields() -> None:
+    record = {
+        "title": "Example Opportunity",
+        "organization": "Example Org",
+        "opportunity_type": "scholarship",
+        "location": "Remote",
+        "eligibility_text": "Open to students",
+        "description": "A sample opportunity description",
+        "required_materials": ["resume", "transcript"],
+        "major_requirements": ["Computer Science"],
+    }
+
+    text = seed_script.build_embedding_text(record)
+
+    assert "Title: Example Opportunity" in text
+    assert "Organization: Example Org" in text
+    assert "Opportunity Type: scholarship" in text
+    assert "Location: Remote" in text
+    assert "Eligibility Text: Open to students" in text
+    assert "Required Materials: resume, transcript" in text
+
+
+def test_get_embedding_normalizes_text_and_uses_openai_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeEmbeddings:
+        def create(self, *, model: str, input: str, dimensions: int) -> object:
+            captured["model"] = model
+            captured["input"] = input
+            captured["dimensions"] = dimensions
+
+            class Result:
+                data = [type("Item", (), {"embedding": [0.1, 0.2, 0.3]})()]
+
+            return Result()
+
+    class FakeClient:
+        embeddings = FakeEmbeddings()
+
+    monkeypatch.setattr(embedding_utils, "get_openai_client", lambda: FakeClient())
+
+    vector = embedding_utils.get_embedding("  Example\nText  ")
+
+    assert vector == [0.1, 0.2, 0.3]
+    assert captured == {
+        "model": "text-embedding-3-small",
+        "input": "Example Text",
+        "dimensions": 1536,
+    }
 
 
 def test_dedupe_opportunities_keeps_first_normalized_url() -> None:
@@ -125,19 +186,35 @@ def test_dedupe_opportunities_keeps_first_normalized_url() -> None:
 
 
 @pytest.mark.asyncio
-async def test_seed_opportunities_processes_all_150_records(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_seed_opportunities_processes_all_150_records(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     json_path = Path(__file__).resolve().parents[3] / "data" / "opportunities.json"
     pool = FakePool(FakeConnection())
 
-    monkeypatch.setattr(seed_script, "load_settings", lambda: seed_script.SeedSettings(database_url="postgresql://example/db"))
+    monkeypatch.setattr(
+        seed_script,
+        "load_settings",
+        lambda: seed_script.SeedSettings(database_url="postgresql://example/db"),
+    )
 
     async def fake_create_pool(**kwargs: object) -> FakePool:
         return pool
 
     monkeypatch.setattr(asyncpg, "create_pool", fake_create_pool)
+    monkeypatch.setattr(
+        seed_script, "build_embedding_text", lambda record: "example embedding text"
+    )
+    monkeypatch.setattr(seed_script, "get_embedding", lambda text: [0.1, 0.2, 0.3])
 
     stats = await seed_script.seed_opportunities(json_path)
 
-    assert stats == {"total": 150, "inserted": 150, "updated": 0, "skipped": 0, "errors": 0}
+    assert stats == {
+        "total": 150,
+        "inserted": 150,
+        "updated": 0,
+        "skipped": 0,
+        "errors": 0,
+    }
     assert len(pool.connection.executions) == 150
     assert pool.closed is True
