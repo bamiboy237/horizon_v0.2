@@ -1,3 +1,5 @@
+"""FastAPI application entry point for the Horizon backend."""
+
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI

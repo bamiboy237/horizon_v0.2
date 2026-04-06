@@ -1,3 +1,5 @@
+"""Asyncpg pool lifecycle helpers and shared database access utilities."""
+
 import asyncpg
 
 from app.core.config import Settings

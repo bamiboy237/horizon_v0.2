@@ -1,3 +1,5 @@
+"""Alembic migration environment for the Horizon backend database."""
+
 from __future__ import annotations
 
 from logging.config import fileConfig

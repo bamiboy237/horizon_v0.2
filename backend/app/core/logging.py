@@ -1,3 +1,5 @@
+"""Structured logging configuration for the Horizon backend."""
+
 import logging
 import sys
 

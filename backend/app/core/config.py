@@ -1,6 +1,8 @@
+"""Application settings and environment configuration for the backend."""
+
 from functools import lru_cache
 
-from pydantic import computed_field
+from pydantic import Field, computed_field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,6 +21,27 @@ class Settings(BaseSettings):
     database_pool_min_size: int = 1
     database_pool_max_size: int = 10
     database_command_timeout: float = 30.0
+    clerk_secret_key: str | None = None
+    clerk_webhook_signing_secret: str | None = None
+    clerk_authorized_parties: list[str] = Field(default_factory=list)
+
+    @field_validator("clerk_authorized_parties")
+    @classmethod
+    def _validate_clerk_authorized_parties(cls, value: list[str]) -> list[str]:
+        cleaned_values = [item.strip() for item in value]
+        if any(not item for item in cleaned_values):
+            raise ValueError("CLERK_AUTHORIZED_PARTIES must contain non-empty origins.")
+
+        return cleaned_values
+
+    @model_validator(mode="after")
+    def _validate_clerk_auth_configuration(self) -> "Settings":
+        if self.clerk_secret_key and not self.clerk_authorized_parties:
+            raise ValueError(
+                "CLERK_AUTHORIZED_PARTIES must contain at least one origin when Clerk auth is enabled."
+            )
+
+        return self
 
     @computed_field
     @property

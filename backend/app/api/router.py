@@ -1,3 +1,5 @@
+"""Central API router that aggregates all Horizon endpoint modules."""
+
 from fastapi import APIRouter
 
 from app.api import auth, chat, email, health, profile, research, search

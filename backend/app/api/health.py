@@ -1,3 +1,5 @@
+"""Health check endpoints for service readiness and liveness probes."""
+
 from fastapi import APIRouter
 
 from app.core.database import check_db_connection, get_last_connection_error, is_db_configured
