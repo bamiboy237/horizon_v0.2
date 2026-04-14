@@ -185,6 +185,12 @@ def test_dedupe_opportunities_keeps_first_normalized_url() -> None:
     assert skipped == 1
 
 
+def test_serialize_embedding_vector_formats_pgvector_input() -> None:
+    serialized = seed_script._serialize_embedding_vector([0.1, 0.2, 0.3])
+
+    assert serialized == "[0.1, 0.2, 0.3]"
+
+
 @pytest.mark.asyncio
 async def test_seed_opportunities_processes_all_150_records(
     monkeypatch: pytest.MonkeyPatch,
