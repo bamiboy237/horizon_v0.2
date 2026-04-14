@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import copy
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -52,10 +51,6 @@ EMBEDDING_SOURCE_FIELDS: tuple[str, ...] = (
     "organization",
     "opportunity_type",
     "location",
-    "eligibility_text",
-    "required_materials",
-    "description",
-    "location",
     "funding_amount",
     "funding_type",
     "citizenship_required",
@@ -71,6 +66,22 @@ EMBEDDING_SOURCE_FIELDS: tuple[str, ...] = (
     "estimated_prep_hours",
     "description",
 )
+
+UPSERT_OPPORTUNITY_QUERY = """
+    INSERT INTO opportunities ({columns})
+    VALUES ({placeholders})
+    ON CONFLICT (normalized_url) DO UPDATE
+    SET {assignments}
+""".format(
+    columns=", ".join(OPPORTUNITY_COLUMNS),
+    placeholders=", ".join(
+        f"${index}" for index in range(1, len(OPPORTUNITY_COLUMNS) + 1)
+    ),
+    assignments=",\n        ".join(
+        f"{column} = EXCLUDED.{column}" for column in OPPORTUNITY_UPDATE_COLUMNS
+    ),
+)
+
 
 
 class SeedSettings(BaseSettings):
@@ -200,6 +211,19 @@ def _clean_numeric(value: Any) -> float | int | None:
     return value
 
 
+def _serialize_embedding_vector(value: Any) -> str | None:
+    if value is None:
+        return None
+
+    if not isinstance(value, list):
+        raise ValueError("Embedding values must be a list of floats.")
+
+    if any(isinstance(item, bool) for item in value):
+        raise ValueError("Embedding values cannot contain booleans.")
+
+    return "[" + ", ".join(str(item) for item in value) + "]"
+
+
 def _parse_deadline(value: Any) -> datetime | None:
     if value is None:
         return None
@@ -282,7 +306,7 @@ def normalize_opportunity(
         ),
         "institution_types": _clean_text_list(record.get("institution_types")),
         "demographic_requirements": _clean_json_value(
-            copy.deepcopy(record.get("demographic_requirements"))
+            record.get("demographic_requirements")
         ),
         "eligibility_text": _clean_text(record.get("eligibility_text")),
         "deadline": _parse_deadline(record.get("deadline")),
@@ -317,25 +341,6 @@ def dedupe_opportunities(
     return unique_records, skipped
 
 
-def build_upsert_query() -> str:
-    """Build the SQL statement used to insert or refresh a seed row."""
-
-    columns = ", ".join(OPPORTUNITY_COLUMNS)
-    placeholders = ", ".join(
-        f"${index}" for index in range(1, len(OPPORTUNITY_COLUMNS) + 1)
-    )
-    assignments = ",\n                ".join(
-        f"{column} = EXCLUDED.{column}" for column in OPPORTUNITY_UPDATE_COLUMNS
-    )
-
-    return f"""
-        INSERT INTO opportunities ({columns})
-        VALUES ({placeholders})
-        ON CONFLICT (normalized_url) DO UPDATE
-        SET {assignments}
-    """
-
-
 async def upsert_opportunity(connection: Any, record: dict[str, Any]) -> bool:
     """Insert or update a normalized opportunity row."""
 
@@ -345,7 +350,7 @@ async def upsert_opportunity(connection: Any, record: dict[str, Any]) -> bool:
     )
 
     values = [record[column] for column in OPPORTUNITY_COLUMNS]
-    await connection.execute(build_upsert_query(), *values)
+    await connection.execute(UPSERT_OPPORTUNITY_QUERY, *values)
     return existing is None
 
 
@@ -383,7 +388,9 @@ async def seed_opportunities(json_path: Path) -> dict[str, int]:
 
             for record in unique_records:
                 try:
-                    record["embedding"] = get_embedding(build_embedding_text(record))
+                    record["embedding"] = _serialize_embedding_vector(
+                        get_embedding(build_embedding_text(record))
+                    )
                     if await upsert_opportunity(connection, record):
                         inserted += 1
                     else:
